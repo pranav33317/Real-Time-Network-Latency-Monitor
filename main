@@ -1,0 +1,95 @@
+import requests
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+import time
+from datetime import datetime
+
+# RIPE Atlas API base URL
+RIPE_ATLAS_API_URL = "https://atlas.ripe.net/api/v2/measurements/"
+
+# Replace with your own API key (or use other methods to authenticate)
+API_KEY = 'your_api_key_here'  # Enter your API key here
+
+# Function to fetch measurement results from RIPE Atlas API
+def fetch_latency_data(measurement_id):
+    url = f"{RIPE_ATLAS_API_URL}{measurement_id}/results/"
+    headers = {'Authorization': f"Bearer {API_KEY}"}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return data
+    else:
+        print("Failed to fetch data from RIPE Atlas API")
+        return None
+
+# Process latency data: Calculate statistics and identify anomalies
+def process_latency_data(latency_data):
+    df = pd.DataFrame(latency_data)
+    
+    # Convert timestamps and latencies to appropriate formats
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['latency'] = pd.to_numeric(df['latency'], errors='coerce')  # Ensure latency is numeric
+    
+    # Drop rows where latency is NaN (could happen due to non-numeric values)
+    df = df.dropna(subset=['latency'])
+    
+    # Calculate basic statistics
+    avg_latency = df['latency'].mean()
+    max_latency = df['latency'].max()
+    std_latency = df['latency'].std()
+
+    # Detect anomalies (latency spikes or outliers)
+    threshold = avg_latency + 2 * std_latency  # Example threshold for anomaly detection
+    anomalies = df[df['latency'] > threshold]
+    
+    return df, avg_latency, max_latency, std_latency, anomalies
+
+# Function to visualize latency data using Plotly
+def plot_latency_data(df):
+    fig = px.line(df, x='timestamp', y='latency', title='Real-Time Latency Monitoring')
+    fig.update_xaxes(title='Time')
+    fig.update_yaxes(title='Latency (ms)')
+    return fig
+
+# Streamlit dashboard function
+def create_dashboard():
+    st.title("Real-Time Latency Monitoring System")
+    
+    # Input for RIPE Atlas measurement ID
+    measurement_id = st.text_input("Enter RIPE Atlas Measurement ID", "123456")  # Default measurement ID
+    if measurement_id:
+        # Fetch the data from RIPE Atlas API
+        latency_data = fetch_latency_data(measurement_id)
+        
+        if latency_data:
+            # Process and analyze the latency data
+            df, avg_latency, max_latency, std_latency, anomalies = process_latency_data(latency_data)
+            
+            # Display basic statistics
+            st.subheader("Basic Latency Statistics")
+            st.write(f"Average Latency: {avg_latency:.2f} ms")
+            st.write(f"Max Latency: {max_latency:.2f} ms")
+            st.write(f"Latency Standard Deviation: {std_latency:.2f} ms")
+            
+            # Display anomalies
+            st.subheader("Anomalous Latencies")
+            if not anomalies.empty:
+                st.write(anomalies)
+            else:
+                st.write("No anomalies detected.")
+            
+            # Visualize the latency data
+            st.subheader("Latency Over Time")
+            latency_fig = plot_latency_data(df)
+            st.plotly_chart(latency_fig)
+        
+        else:
+            st.write("Failed to fetch data from RIPE Atlas API.")
+    
+    else:
+        st.write("Please enter a valid RIPE Atlas Measurement ID.")
+
+# Run the Streamlit dashboard
+if __name__ == '__main__':
+    create_dashboard()
